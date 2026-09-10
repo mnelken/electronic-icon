@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "test": "node smoke-test.js",
     "build": "electron-builder --win --x64"
   },
   "devDependencies": {
@@ -17,6 +18,8 @@
     "files": [
       "index.html",
       "main.js",
+      "renderer.js",
+      "styles.css",
       "package.json",
       "*.jpg"
     ],

@@ -1,6 +1,8 @@
 const { app, BrowserWindow } = require('electron');
 const path = require('path');
 
+const isSmokeTest = process.argv.includes('--smoke-test');
+
 function createWindow() {
   const window = new BrowserWindow({
     show: false,
@@ -19,10 +21,32 @@ function createWindow() {
   window.webContents.on('will-navigate', (event) => {
     event.preventDefault();
   });
+  window.webContents.once('did-fail-load', () => {
+    if (isSmokeTest) {
+      app.exit(1);
+    }
+  });
+  window.webContents.once('did-finish-load', async () => {
+    if (!isSmokeTest) {
+      return;
+    }
+
+    try {
+      const hasExpectedElements = await window.webContents.executeJavaScript(
+        "Boolean(document.getElementById('icon') && document.getElementById('glow'))",
+        true
+      );
+      app.exit(hasExpectedElements ? 0 : 1);
+    } catch (error) {
+      app.exit(1);
+    }
+  });
 
   window.loadFile(path.join(__dirname, 'index.html'));
   window.once('ready-to-show', () => {
-    window.show();
+    if (!isSmokeTest) {
+      window.show();
+    }
   });
 }
 
