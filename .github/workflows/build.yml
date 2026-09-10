@@ -20,8 +20,7 @@ jobs:
       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
 
     steps:
-      - name: Check out repository for tag push
-        if: github.event_name != 'workflow_dispatch'
+      - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -33,20 +32,19 @@ jobs:
         run: |
           [[ "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "Manual releases require a semantic v* tag."; exit 1; }
 
-      - name: Check out requested release tag
+      - name: Inspect requested release tag
         if: github.event_name == 'workflow_dispatch'
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ env.RELEASE_TAG }}
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Confirm checked out release tag
-        if: github.event_name == 'workflow_dispatch'
+        id: release_tag
         shell: bash
         run: |
-          CHECKED_OUT_TAG="$(git describe --tags --exact-match HEAD)"
-          [[ "$CHECKED_OUT_TAG" == "$RELEASE_TAG" ]] || { echo "Checked out ref does not match $RELEASE_TAG."; exit 1; }
+          if git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            TAG_COMMIT="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG")"
+            HEAD_COMMIT="$(git rev-parse HEAD)"
+            [[ "$TAG_COMMIT" == "$HEAD_COMMIT" ]] || { echo "Tag $RELEASE_TAG already exists on $TAG_COMMIT, but this run is building $HEAD_COMMIT."; exit 1; }
+            echo "create_tag=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "create_tag=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -62,6 +60,15 @@ jobs:
 
       - name: Build Windows executable
         run: npm run build
+
+      - name: Create release tag
+        if: github.event_name == 'workflow_dispatch' && steps.release_tag.outputs.create_tag == 'true'
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$RELEASE_TAG"
+          git push origin "refs/tags/$RELEASE_TAG"
 
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
