@@ -37,8 +37,15 @@ let renderWidth = 0;
 let renderHeight = 0;
 let dpr = Math.max(1, window.devicePixelRatio || 1);
 let animationStarted = false;
+let animationFrameId = null;
+let resizeObserver = null;
+let isDisposed = false;
 
 function resizeCanvas() {
+  if (isDisposed) {
+    return;
+  }
+
   const rect = image.getBoundingClientRect();
   renderWidth = Math.max(1, rect.width);
   renderHeight = Math.max(1, rect.height);
@@ -57,13 +64,17 @@ function resizeCanvas() {
 
   if (!animationStarted) {
     animationStarted = true;
-    requestAnimationFrame(drawGlow);
+    animationFrameId = requestAnimationFrame(drawGlow);
   }
 }
 
 function drawGlow(time) {
+  if (isDisposed) {
+    return;
+  }
+
   if (!renderWidth || !renderHeight) {
-    requestAnimationFrame(drawGlow);
+    animationFrameId = requestAnimationFrame(drawGlow);
     return;
   }
 
@@ -132,18 +143,14 @@ function drawGlow(time) {
     context.fill();
   });
 
-  requestAnimationFrame(drawGlow);
+  animationFrameId = requestAnimationFrame(drawGlow);
 }
 
-if (typeof ResizeObserver === 'function') {
-  const resizeObserver = new ResizeObserver(resizeCanvas);
-  resizeObserver.observe(stage);
-  resizeObserver.observe(image);
+function handleImageLoad() {
+  resizeCanvas();
 }
 
-image.addEventListener('load', resizeCanvas);
-
-image.addEventListener('error', () => {
+function handleImageError() {
   if (image.currentSrc === fallbackImageSrc) {
     assetStatus.hidden = false;
     resizeCanvas();
@@ -152,7 +159,40 @@ image.addEventListener('error', () => {
 
   assetStatus.hidden = false;
   image.src = fallbackImageSrc;
-});
+}
 
-window.addEventListener('resize', resizeCanvas);
+function handleWindowResize() {
+  resizeCanvas();
+}
+
+if (typeof ResizeObserver === 'function') {
+  resizeObserver = new ResizeObserver(resizeCanvas);
+  resizeObserver.observe(stage);
+  resizeObserver.observe(image);
+}
+
+image.addEventListener('load', handleImageLoad);
+image.addEventListener('error', handleImageError);
+window.addEventListener('resize', handleWindowResize);
 image.src = requestedImageSrc;
+
+window.addEventListener(
+  'beforeunload',
+  () => {
+    isDisposed = true;
+    animationStarted = false;
+
+    if (animationFrameId !== null) {
+      cancelAnimationFrame(animationFrameId);
+    }
+
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+    }
+
+    image.removeEventListener('load', handleImageLoad);
+    image.removeEventListener('error', handleImageError);
+    window.removeEventListener('resize', handleWindowResize);
+  },
+  { once: true }
+);
