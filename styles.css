@@ -44,3 +44,23 @@ body {
   pointer-events: none;
   mix-blend-mode: screen;
 }
+
+#asset-status {
+  position: absolute;
+  left: 50%;
+  bottom: 2rem;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.85rem 1.1rem;
+  border: 1px solid rgba(255, 186, 104, 0.4);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.68);
+  color: #f5d9b2;
+  font-size: 0.95rem;
+  letter-spacing: 0.01em;
+  backdrop-filter: blur(8px);
+}
+
+#asset-status code {
+  color: #ffd48b;
+}

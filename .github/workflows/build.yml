@@ -23,15 +23,17 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.release_tag) || github.ref }}
 
       - name: Validate manual release tag
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
           RELEASE_TAG="${{ github.event.inputs.release_tag }}"
-          [[ "$RELEASE_TAG" =~ ^v ]] || { echo "Manual releases require a v* tag."; exit 1; }
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "Manual releases require a semantic v* tag."; exit 1; }
           git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null 2>&1 || { echo "Tag $RELEASE_TAG does not exist."; exit 1; }
+          CHECKED_OUT_TAG="$(git describe --tags --exact-match HEAD)"
+          [[ "$CHECKED_OUT_TAG" == "$RELEASE_TAG" ]] || { echo "Checked out ref does not match $RELEASE_TAG."; exit 1; }
 
       - name: Set up Node.js
         uses: actions/setup-node@v4

@@ -33,7 +33,33 @@ function createWindow() {
 
     try {
       const hasExpectedElements = await window.webContents.executeJavaScript(
-        "Boolean(document.getElementById('icon') && document.getElementById('glow'))",
+        `new Promise((resolve) => {
+          const deadline = Date.now() + 10000;
+
+          const checkReady = () => {
+            const image = document.getElementById('icon');
+            const canvas = document.getElementById('glow');
+
+            if (!canvas || !image) {
+              resolve(false);
+              return;
+            }
+
+            if (image.complete && image.naturalWidth > 0) {
+              resolve(true);
+              return;
+            }
+
+            if (Date.now() >= deadline) {
+              resolve(false);
+              return;
+            }
+
+            setTimeout(checkReady, 100);
+          };
+
+          checkReady();
+        })`,
         true
       );
       app.exit(hasExpectedElements ? 0 : 1);

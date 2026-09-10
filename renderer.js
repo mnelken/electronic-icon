@@ -1,7 +1,28 @@
 const stage = document.querySelector('.stage');
 const image = document.getElementById('icon');
 const canvas = document.getElementById('glow');
+const assetStatus = document.getElementById('asset-status');
+const requestedImageSrc = image.dataset.src || 'unburnt-bush.jpg';
 const context = canvas.getContext('2d');
+const fallbackImageSrc = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 2200">
+    <defs>
+      <radialGradient id="glow" cx="50%" cy="42%" r="38%">
+        <stop offset="0%" stop-color="#ffe4a0" stop-opacity="0.95" />
+        <stop offset="28%" stop-color="#f6a651" stop-opacity="0.82" />
+        <stop offset="58%" stop-color="#b32e1b" stop-opacity="0.62" />
+        <stop offset="100%" stop-color="#110707" stop-opacity="1" />
+      </radialGradient>
+    </defs>
+    <rect width="1600" height="2200" fill="#020202" />
+    <rect x="120" y="120" width="1360" height="1960" rx="34" fill="#140808" stroke="#7f2e16" stroke-width="8" />
+    <circle cx="800" cy="920" r="480" fill="url(#glow)" />
+    <path d="M800 360 936 744 1328 760 1014 996 1124 1378 800 1148 476 1378 586 996 272 760 664 744Z" fill="none" stroke="#f0bf73" stroke-width="34" stroke-linejoin="round" />
+    <circle cx="800" cy="920" r="164" fill="none" stroke="#f7deb2" stroke-width="22" />
+    <text x="800" y="1630" text-anchor="middle" font-family="Arial, sans-serif" font-size="94" fill="#f6dfbe">Placeholder Artwork</text>
+    <text x="800" y="1748" text-anchor="middle" font-family="Arial, sans-serif" font-size="52" fill="#f0c17f">Add unburnt-bush.jpg to display the final icon.</text>
+  </svg>
+`)}`;
 const particles = Array.from({ length: 36 }, () => ({
   x: Math.random(),
   y: Math.random(),
@@ -120,10 +141,18 @@ if (typeof ResizeObserver === 'function') {
   resizeObserver.observe(image);
 }
 
-if (image.complete) {
-  resizeCanvas();
-} else {
-  image.addEventListener('load', resizeCanvas, { once: true });
-}
+image.addEventListener('load', resizeCanvas);
+
+image.addEventListener('error', () => {
+  if (image.currentSrc === fallbackImageSrc) {
+    assetStatus.hidden = false;
+    resizeCanvas();
+    return;
+  }
+
+  assetStatus.hidden = false;
+  image.src = fallbackImageSrc;
+});
 
 window.addEventListener('resize', resizeCanvas);
+image.src = requestedImageSrc;
