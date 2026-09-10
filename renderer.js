@@ -1,9 +1,12 @@
 const stage = document.querySelector('.stage');
 const image = document.getElementById('icon');
 const canvas = document.getElementById('glow');
+const cameraStatus = document.getElementById('camera-status');
 const assetStatus = document.getElementById('asset-status');
 const requestedImageSrc = image.dataset.src || 'unburnt-bush.jpg';
 const context = canvas.getContext('2d');
+const searchParams = new URLSearchParams(window.location.search);
+const isSmokeTest = searchParams.get('smokeTest') === '1';
 const fallbackImageSrc = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`
   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 2200">
     <defs>
@@ -32,6 +35,23 @@ const particles = Array.from({ length: 36 }, () => ({
   phase: Math.random() * Math.PI * 2,
   alpha: 0.18 + Math.random() * 0.35
 }));
+const rubySparkles = Array.from({ length: 18 }, () => ({
+  x: 0.34 + Math.random() * 0.32,
+  y: 0.42 + Math.random() * 0.34,
+  radius: 0.002 + Math.random() * 0.004,
+  speedY: 0.00022 + Math.random() * 0.00045,
+  drift: (Math.random() - 0.5) * 0.0012,
+  phase: Math.random() * Math.PI * 2,
+  alpha: 0.2 + Math.random() * 0.35
+}));
+const analysisCanvas = document.createElement('canvas');
+analysisCanvas.width = 32;
+analysisCanvas.height = 24;
+const analysisContext = analysisCanvas.getContext('2d', { willReadFrequently: true });
+const cameraVideo = document.createElement('video');
+cameraVideo.autoplay = true;
+cameraVideo.muted = true;
+cameraVideo.playsInline = true;
 
 let renderWidth = 0;
 let renderHeight = 0;
@@ -40,6 +60,180 @@ let animationStarted = false;
 let animationFrameId = null;
 let resizeObserver = null;
 let isDisposed = false;
+let cameraSampleTimeoutId = null;
+const cameraState = {
+  stream: null,
+  influence: 0,
+  luminance: 0,
+  motion: 0,
+  lastSampleTime: 0,
+  previousFrame: null
+};
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function updateCameraStatus(message, isActive) {
+  cameraStatus.textContent = message;
+  cameraStatus.dataset.active = isActive ? 'true' : 'false';
+  cameraStatus.hidden = false;
+}
+
+function stopStream(stream) {
+  if (!stream) {
+    return;
+  }
+
+  stream.getTracks().forEach((track) => {
+    track.stop();
+  });
+}
+
+function pickCameraDevice(devices) {
+  const videoDevices = devices.filter((device) => device.kind === 'videoinput');
+  const preferredPatterns = [/infrared/i, /\bir\b/i, /windows hello/i, /depth/i, /realsense/i];
+
+  for (const pattern of preferredPatterns) {
+    const match = videoDevices.find((device) => pattern.test(device.label));
+    if (match) {
+      return match;
+    }
+  }
+
+  return videoDevices[0] || null;
+}
+
+async function openCameraStream(selectedDevice) {
+  const preferredConstraints = selectedDevice
+    ? {
+        deviceId: { exact: selectedDevice.deviceId },
+        width: { ideal: 320 },
+        height: { ideal: 240 },
+        frameRate: { ideal: 15, max: 24 }
+      }
+    : true;
+
+  try {
+    return await navigator.mediaDevices.getUserMedia({
+      video: preferredConstraints,
+      audio: false
+    });
+  } catch (error) {
+    if (!selectedDevice) {
+      throw error;
+    }
+
+    return navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
+    });
+  }
+}
+
+async function initializeCameraReactivity() {
+  if (isSmokeTest) {
+    return;
+  }
+
+  if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
+    updateCameraStatus('Camera-reactive glow is unavailable in this environment.', false);
+    return;
+  }
+
+  let bootstrapStream = null;
+
+  try {
+    bootstrapStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    if (isDisposed) {
+      stopStream(bootstrapStream);
+      return;
+    }
+
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    if (isDisposed) {
+      stopStream(bootstrapStream);
+      return;
+    }
+
+    const selectedDevice = pickCameraDevice(devices);
+
+    stopStream(bootstrapStream);
+    bootstrapStream = null;
+
+    const stream = await openCameraStream(selectedDevice);
+    if (isDisposed) {
+      stopStream(stream);
+      return;
+    }
+
+    cameraState.stream = stream;
+    cameraVideo.srcObject = stream;
+    await cameraVideo.play().catch(() => {});
+
+    if (isDisposed) {
+      stopStream(stream);
+      cameraVideo.srcObject = null;
+      return;
+    }
+
+    const label = stream.getVideoTracks()[0]?.label || selectedDevice?.label || 'camera';
+    const infraredSelected = /infrared|\bir\b|windows hello|depth|realsense/i.test(label);
+    updateCameraStatus(
+      infraredSelected
+        ? `Infrared-reactive glow active: ${label}`
+        : `Camera-reactive glow active: ${label}`,
+      true
+    );
+  } catch (error) {
+    stopStream(bootstrapStream);
+    updateCameraStatus('Infrared camera unavailable. Using ambient animation only.', false);
+  }
+}
+
+function sampleCameraInfluence(time) {
+  if (
+    !analysisContext ||
+    !cameraState.stream ||
+    cameraVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+    time - cameraState.lastSampleTime < 80
+  ) {
+    cameraState.influence *= 0.985;
+    cameraState.motion *= 0.98;
+    return;
+  }
+
+  cameraState.lastSampleTime = time;
+  analysisContext.drawImage(cameraVideo, 0, 0, analysisCanvas.width, analysisCanvas.height);
+  const frame = analysisContext.getImageData(0, 0, analysisCanvas.width, analysisCanvas.height).data;
+
+  let totalLuminance = 0;
+  let totalMotion = 0;
+
+  for (let index = 0; index < frame.length; index += 4) {
+    const luminance = (frame[index] * 0.2126 + frame[index + 1] * 0.7152 + frame[index + 2] * 0.0722) / 255;
+    totalLuminance += luminance;
+
+    if (cameraState.previousFrame) {
+      totalMotion += Math.abs(luminance - cameraState.previousFrame[index / 4]);
+    }
+  }
+
+  const pixelCount = frame.length / 4;
+  const averageLuminance = totalLuminance / pixelCount;
+  const averageMotion = cameraState.previousFrame ? totalMotion / pixelCount : 0;
+
+  cameraState.previousFrame = new Float32Array(pixelCount);
+  for (let index = 0, pixelIndex = 0; index < frame.length; index += 4, pixelIndex += 1) {
+    cameraState.previousFrame[pixelIndex] =
+      (frame[index] * 0.2126 + frame[index + 1] * 0.7152 + frame[index + 2] * 0.0722) / 255;
+  }
+
+  cameraState.luminance += (averageLuminance - cameraState.luminance) * 0.2;
+  cameraState.motion += (averageMotion - cameraState.motion) * 0.35;
+  cameraState.influence +=
+    (clamp(cameraState.luminance * 0.75 + cameraState.motion * 2.4, 0, 1) - cameraState.influence) * 0.3;
+}
 
 function resizeCanvas() {
   if (isDisposed) {
@@ -78,12 +272,16 @@ function drawGlow(time) {
     return;
   }
 
+  sampleCameraInfluence(time);
+
   const t = time * 0.001;
   const centerX = renderWidth * 0.5;
   const centerY = renderHeight * 0.47;
   const baseRadius = Math.min(renderWidth, renderHeight) * 0.19;
-  const pulse = 1 + Math.sin(t * 1.4) * 0.045 + Math.sin(t * 0.63 + 1.7) * 0.03;
-  const flicker = 0.88 + Math.sin(t * 4.6 + 0.4) * 0.04;
+  const cameraBoost = 1 + cameraState.influence * 0.2;
+  const pulse =
+    (1 + Math.sin(t * 1.4) * 0.045 + Math.sin(t * 0.63 + 1.7) * 0.03) * cameraBoost;
+  const flicker = 0.88 + Math.sin(t * 4.6 + 0.4) * 0.04 + cameraState.motion * 0.18;
 
   context.clearRect(0, 0, renderWidth, renderHeight);
 
@@ -96,8 +294,8 @@ function drawGlow(time) {
     baseRadius * 2.4 * pulse
   );
   coreGlow.addColorStop(0, `rgba(255, 224, 150, ${0.32 * flicker})`);
-  coreGlow.addColorStop(0.22, `rgba(255, 173, 82, ${0.18 * flicker})`);
-  coreGlow.addColorStop(0.55, `rgba(220, 58, 20, ${0.11 * flicker})`);
+  coreGlow.addColorStop(0.22, `rgba(255, 173, 82, ${(0.18 + cameraState.luminance * 0.05) * flicker})`);
+  coreGlow.addColorStop(0.55, `rgba(220, 58, 20, ${(0.11 + cameraState.motion * 0.05) * flicker})`);
   coreGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
   context.fillStyle = coreGlow;
   context.fillRect(0, 0, renderWidth, renderHeight);
@@ -118,7 +316,7 @@ function drawGlow(time) {
 
   particles.forEach((particle, index) => {
     particle.phase += 0.015 + index * 0.00003;
-    particle.y -= particle.speedY;
+    particle.y -= particle.speedY * (1 + cameraState.influence * 0.6);
     if (particle.y < -0.08) {
       particle.x = 0.28 + Math.random() * 0.44;
       particle.y = 1.08 + Math.random() * 0.12;
@@ -131,15 +329,45 @@ function drawGlow(time) {
     const radius =
       particle.radius *
       Math.min(renderWidth, renderHeight) *
-      (0.9 + Math.sin(t + particle.phase) * 0.18);
+      (0.9 + Math.sin(t + particle.phase) * 0.18 + cameraState.motion * 0.35);
 
     const particleGlow = context.createRadialGradient(x, y, 0, x, y, radius);
-    particleGlow.addColorStop(0, `rgba(255, 224, 168, ${particle.alpha})`);
-    particleGlow.addColorStop(0.4, `rgba(255, 152, 70, ${particle.alpha * 0.55})`);
+    particleGlow.addColorStop(0, `rgba(255, 224, 168, ${particle.alpha + cameraState.luminance * 0.1})`);
+    particleGlow.addColorStop(0.4, `rgba(255, 152, 70, ${(particle.alpha * 0.55) + cameraState.motion * 0.08})`);
     particleGlow.addColorStop(1, 'rgba(255, 60, 0, 0)');
     context.fillStyle = particleGlow;
     context.beginPath();
     context.arc(x, y, radius, 0, Math.PI * 2);
+    context.fill();
+  });
+
+  rubySparkles.forEach((sparkle, index) => {
+    sparkle.phase += 0.02 + index * 0.00004;
+    sparkle.y -= sparkle.speedY * (0.8 + cameraState.influence * 0.8);
+    sparkle.x += Math.sin(sparkle.phase) * sparkle.drift;
+
+    if (sparkle.y < 0.18 || sparkle.x < 0.26 || sparkle.x > 0.74) {
+      sparkle.x = 0.35 + Math.random() * 0.3;
+      sparkle.y = 0.62 + Math.random() * 0.22;
+      sparkle.alpha = 0.22 + Math.random() * 0.38;
+    }
+
+    const x = sparkle.x * renderWidth;
+    const y = sparkle.y * renderHeight;
+    const radius =
+      sparkle.radius *
+      Math.min(renderWidth, renderHeight) *
+      (1.1 + Math.sin(t * 2.2 + sparkle.phase) * 0.55 + cameraState.motion * 0.9);
+    const alpha = clamp(sparkle.alpha + cameraState.influence * 0.16, 0, 0.9);
+
+    const rubyGlow = context.createRadialGradient(x, y, 0, x, y, radius * 1.6);
+    rubyGlow.addColorStop(0, `rgba(255, 226, 236, ${alpha})`);
+    rubyGlow.addColorStop(0.24, `rgba(255, 84, 132, ${alpha * 0.9})`);
+    rubyGlow.addColorStop(0.58, `rgba(210, 22, 78, ${alpha * 0.55})`);
+    rubyGlow.addColorStop(1, 'rgba(120, 0, 30, 0)');
+    context.fillStyle = rubyGlow;
+    context.beginPath();
+    context.arc(x, y, Math.max(radius * 1.6, 1.2), 0, Math.PI * 2);
     context.fill();
   });
 
@@ -175,6 +403,9 @@ image.addEventListener('load', handleImageLoad);
 image.addEventListener('error', handleImageError);
 window.addEventListener('resize', handleWindowResize);
 image.src = requestedImageSrc;
+cameraSampleTimeoutId = window.setTimeout(() => {
+  initializeCameraReactivity();
+}, 150);
 
 window.addEventListener(
   'beforeunload',
@@ -190,6 +421,12 @@ window.addEventListener(
       resizeObserver.disconnect();
     }
 
+    if (cameraSampleTimeoutId !== null) {
+      clearTimeout(cameraSampleTimeoutId);
+    }
+
+    stopStream(cameraState.stream);
+    cameraVideo.srcObject = null;
     image.removeEventListener('load', handleImageLoad);
     image.removeEventListener('error', handleImageError);
     window.removeEventListener('resize', handleWindowResize);

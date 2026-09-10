@@ -45,10 +45,10 @@ body {
   mix-blend-mode: screen;
 }
 
+#camera-status,
 #asset-status {
   position: absolute;
   left: 50%;
-  bottom: 2rem;
   transform: translateX(-50%);
   margin: 0;
   padding: 0.85rem 1.1rem;
@@ -61,6 +61,26 @@ body {
   backdrop-filter: blur(8px);
 }
 
+#camera-status {
+  top: 1.5rem;
+  bottom: auto;
+}
+
+#asset-status {
+  bottom: 2rem;
+}
+
+#camera-status[data-active='true'] {
+  border-color: rgba(187, 78, 116, 0.45);
+  color: #ffd7e2;
+}
+
+#camera-status[data-active='false'] {
+  border-color: rgba(255, 186, 104, 0.4);
+  color: #f5d9b2;
+}
+
+#camera-status code,
 #asset-status code {
   color: #ffd48b;
 }

@@ -1,7 +1,16 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, session } = require('electron');
 const path = require('path');
 
 const isSmokeTest = process.argv.includes('--smoke-test');
+
+function isTrustedMediaRequest(webContents, requestingOrigin, details = {}) {
+  const currentUrl = webContents.getURL();
+  const isLocalRenderer = currentUrl.startsWith('file://');
+  const isLocalOrigin = !requestingOrigin || requestingOrigin.startsWith('file://');
+  const mediaTypes = details.mediaTypes || [];
+
+  return isLocalRenderer && isLocalOrigin && (mediaTypes.length === 0 || mediaTypes.includes('video'));
+}
 
 function createWindow() {
   const window = new BrowserWindow({
@@ -68,7 +77,9 @@ function createWindow() {
     }
   });
 
-  window.loadFile(path.join(__dirname, 'index.html'));
+  window.loadFile(path.join(__dirname, 'index.html'), {
+    query: isSmokeTest ? { smokeTest: '1' } : undefined
+  });
   window.once('ready-to-show', () => {
     if (!isSmokeTest) {
       window.show();
@@ -77,6 +88,21 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    if (permission === 'media') {
+      return isTrustedMediaRequest(webContents, requestingOrigin, details);
+    }
+
+    return false;
+  });
+
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback, details) => {
+      const requestingOrigin = details.securityOrigin || details.requestingUrl || '';
+      callback(permission === 'media' && isTrustedMediaRequest(webContents, requestingOrigin, details));
+    }
+  );
+
   createWindow();
 
   app.on('activate', () => {
