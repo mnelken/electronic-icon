@@ -1,7 +1,7 @@
 const { spawn } = require('child_process');
 const electronBinary = require('electron');
 
-const child = spawn(electronBinary, ['.', '--smoke-test', '--no-sandbox', '--disable-gpu'], {
+const child = spawn(electronBinary, ['.', '--smoke-test', '--disable-gpu'], {
   stdio: 'inherit',
   env: {
     ...process.env,

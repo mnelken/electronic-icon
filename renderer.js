@@ -114,9 +114,11 @@ function drawGlow(time) {
   requestAnimationFrame(drawGlow);
 }
 
-const resizeObserver = new ResizeObserver(resizeCanvas);
-resizeObserver.observe(stage);
-resizeObserver.observe(image);
+if (typeof ResizeObserver === 'function') {
+  const resizeObserver = new ResizeObserver(resizeCanvas);
+  resizeObserver.observe(stage);
+  resizeObserver.observe(image);
+}
 
 if (image.complete) {
   resizeCanvas();
