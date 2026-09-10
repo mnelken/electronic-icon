@@ -1,0 +1,42 @@
+{
+  "name": "electronic-icon",
+  "version": "1.0.0",
+  "description": "Electron desktop application for displaying the Theotokos of the Unburnt Bush icon.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node smoke-test.js",
+    "build": "electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "electron": "39.8.10",
+    "electron-builder": "24.13.0"
+  },
+  "build": {
+    "appId": "com.mnelken.electronicicon",
+    "productName": "Electronic Icon",
+    "files": [
+      "index.html",
+      "main.js",
+      "renderer.js",
+      "styles.css",
+      "package.json",
+      "*.jpg"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

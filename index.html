@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; base-uri 'none'; object-src 'none';"
+    />
+    <title>Electronic Icon</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="stage">
+      <img id="icon" data-src="unburnt-bush.jpg" alt="Theotokos of the Unburnt Bush icon" />
+      <canvas id="glow" aria-hidden="true"></canvas>
+      <p id="camera-status" hidden role="status" aria-live="polite"></p>
+      <p id="asset-status" hidden role="status" aria-live="polite">
+        Add a local <code>unburnt-bush.jpg</code> file to replace the bundled placeholder artwork.
+      </p>
+    </main>
+    <script src="renderer.js"></script>
+  </body>
+</html>
