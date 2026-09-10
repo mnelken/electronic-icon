@@ -16,23 +16,35 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
 
     steps:
-      - name: Check out repository
+      - name: Check out repository for tag push
+        if: github.event_name != 'workflow_dispatch'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Validate manual release tag
+      - name: Validate manual release tag input
         if: github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          RELEASE_TAG="${{ github.event.inputs.release_tag }}"
           [[ "$RELEASE_TAG" =~ ^v[0-9]+(\.[0-9]+){0,2}$ ]] || { echo "Manual releases require a semantic v* tag."; exit 1; }
-          git fetch --force origin "refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
-          git rev-parse "refs/tags/$RELEASE_TAG" >/dev/null 2>&1 || { echo "Tag $RELEASE_TAG does not exist."; exit 1; }
-          git checkout --detach "refs/tags/$RELEASE_TAG"
+
+      - name: Check out requested release tag
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Confirm checked out release tag
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
           CHECKED_OUT_TAG="$(git describe --tags --exact-match HEAD)"
           [[ "$CHECKED_OUT_TAG" == "$RELEASE_TAG" ]] || { echo "Checked out ref does not match $RELEASE_TAG."; exit 1; }
 
@@ -54,5 +66,5 @@ jobs:
       - name: Publish release assets
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           files: dist/*.exe
